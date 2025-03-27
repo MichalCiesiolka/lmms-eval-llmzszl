@@ -1,0 +1,21 @@
+task: llmzszl_vl
+dataset_path: json
+dataset_name: null
+test_split: test
+dataset_kwargs:
+  data_files:
+    test: "../mmllmzszl-test/metadata_test.json"
+output_type: generate_until
+doc_to_visual: !function utils.llmzszl_doc_to_visual
+process_results: !function utils.llmzszl_process_results
+doc_to_text: "Answer the question from the image. Answer with the good answer letter only."
+doc_to_target: correct_answer
+generation_kwargs:
+  temperature: 0
+  max_new_tokens: 100
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 0.0
