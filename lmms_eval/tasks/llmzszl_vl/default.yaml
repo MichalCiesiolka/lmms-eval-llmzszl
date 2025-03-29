@@ -4,7 +4,7 @@ dataset_name: null
 test_split: test
 dataset_kwargs:
   data_files:
-    test: "../mmllmzszl-test/metadata_test.json"
+    test: "../mmllmzszl-test/metadata.json"
 output_type: generate_until
 doc_to_visual: !function utils.llmzszl_doc_to_visual
 process_results: !function utils.llmzszl_process_results

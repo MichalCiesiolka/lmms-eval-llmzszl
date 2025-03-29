@@ -24,18 +24,26 @@ def llmzszl_doc_to_visual(doc, max_size=(512, 512)):
         return None
     
 
+def parse_pred_ans(pred_ans):
+    pred_ans = pred_ans.lower().strip().replace(".", "")
+    pred_ans = pred_ans[0]
+    return pred_ans
+    
+
 def llmzszl_process_results(doc, results):
-    """
-    Args:
-        doc: a instance of the eval dataset
-        results: [pred]
-    Returns:
-        a dictionary with key: metric name (in this case mme score), value: metric value
-    """
     metadata = {
         "type": doc["type"],
         "category": doc["name"],
         "needs_image_context": doc["needs_image_context"],
         "year": doc["year"],
     }
-    return {"metadata": metadata}
+    pred = results[0]
+    pred_ans = parse_pred_ans(pred)
+    gt_ans = doc["correct_answer"].lower().strip().replace(".", "")
+    score = 1.0 if pred_ans == gt_ans else 0.0
+    prediction = {
+        "prediction": pred_ans,
+        "correct_answer": gt_ans,
+        "score": score,
+    }
+    return {"metadata": metadata, "prediction": prediction}
