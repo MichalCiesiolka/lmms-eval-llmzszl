@@ -1,0 +1,104 @@
+{
+  "results": {
+    "llmzszl_vl": {
+      "alias": "llmzszl_vl",
+      "metadata,none": [],
+      "metadata_stderr,none": [],
+      "prediction,none": [],
+      "prediction_stderr,none": []
+    }
+  },
+  "group_subtasks": {
+    "llmzszl_vl": []
+  },
+  "configs": {
+    "llmzszl_vl": {
+      "task": "llmzszl_vl",
+      "dataset_path": "json",
+      "dataset_kwargs": {
+        "data_files": {
+          "test": "../mmllmzszl-test/metadata.json"
+        }
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function llmzszl_doc_to_visual at 0x70b87b1139c0>",
+      "doc_to_text": "Answer the Polish exam question from the image. Answer with the good answer letter only. Possible answers are A or B or C or D.",
+      "doc_to_target": "correct_answer",
+      "process_results": "<function llmzszl_process_results at 0x70b87b113e20>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "exact_match",
+          "aggregation": "mean",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "temperature": 0.0,
+        "max_new_tokens": 100,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": {
+        "version": 0.0
+      }
+    }
+  },
+  "versions": {
+    "llmzszl_vl": 0.0
+  },
+  "n-shot": {
+    "llmzszl_vl": 0
+  },
+  "higher_is_better": {
+    "llmzszl_vl": {
+      "exact_match": true
+    }
+  },
+  "n-samples": {
+    "llmzszl_vl": {
+      "original": 39346,
+      "effective": 39346
+    }
+  },
+  "config": {
+    "model": "internvl2",
+    "model_args": "pretrained=OpenGVLab/InternVL2_5-8B",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": "cuda",
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "3ac1f67",
+  "date": "20250331_135832",
+  "task_hashes": {
+    "llmzszl_vl": "11b6e8e935a91cbfdf7fc60834c583dd3be5604e371318daf8c74966e743ce64"
+  },
+  "model_source": "internvl2",
+  "model_name": "OpenGVLab/InternVL2_5-8B",
+  "model_name_sanitized": "OpenGVLab__InternVL2_5-8B",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 2974446.206409201,
+  "end_time": 2991334.357956298,
+  "total_evaluation_time_seconds": "16888.151547097135"
+}
