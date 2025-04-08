@@ -43,7 +43,7 @@ class Pixtral(lmms):
             model=pretrained,
             tokenizer_mode=tokenizer_mode,
             dtype=torch.float16,
-            limit_mm_per_prompt={"image_url": 4}
+            limit_mm_per_prompt={"image_url": 1}
         )
         
         self.max_tokens = max_tokens
