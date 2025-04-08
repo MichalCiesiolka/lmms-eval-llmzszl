@@ -2,11 +2,13 @@ from io import BytesIO
 from copy import deepcopy
 import os
 import base64
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Any, Dict
 from tqdm import tqdm
 import requests as url_requests
 import time
 import logging
+import json
+from pathlib import Path
 
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
@@ -14,8 +16,8 @@ from lmms_eval.api.registry import register_model
 from lmms_eval import utils
 import torch
 from accelerate import Accelerator, DistributedType
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor
-from tqdm import tqdm
+from vllm import LLM
+from vllm.sampling_params import SamplingParams
 from PIL import Image
 
 
@@ -23,107 +25,122 @@ from PIL import Image
 class Pixtral(lmms):
     def __init__(
         self,
-        pretrained: str = "mistralai/Pixtral-12B-Base-2409",
+        pretrained: str = "mistralai/Pixtral-12B-2409",
         device: Optional[str] = "cuda",
         dtype: Optional[Union[str, torch.dtype]] = "auto",
         batch_size: Optional[Union[int, str]] = 1,
+        tokenizer_mode: str = "mistral",
+        max_tokens: int = 100,
         **kwargs,
     ) -> None:
         super().__init__()
-        # Do not use kwargs for now
-        assert kwargs == {}, f"Unexpected kwargs: {kwargs}"
-
+        
+        # Parse any remaining kwargs
+        self.kwargs = kwargs
+        
+        # Initialize vLLM model
+        self.llm = LLM(
+            model=pretrained,
+            tokenizer_mode=tokenizer_mode,
+            dtype=torch.float16,
+            limit_mm_per_prompt={"image_url": 4}
+        )
+        
+        self.max_tokens = max_tokens
+        self._device = device
+        self._rank = 0
+        self._world_size = 1
+        
+        # Setup for distributed computing if needed
         accelerator = Accelerator()
         if accelerator.num_processes > 1:
+            if accelerator.is_local_main_process:
+                logging.info(f"Using {accelerator.num_processes} devices with data parallelism")
+            self._rank = accelerator.local_process_index
+            self._world_size = accelerator.num_processes
             self._device = torch.device(f"cuda:{accelerator.local_process_index}")
-        else:
-            self._device = device
+        
+        self.accelerator = accelerator
+        
+    def set_task_dict(self, task_dict: Dict):
+        """Set task_dict to be used by model during evaluation"""
+        self.task_dict = task_dict
 
-        # Load model
-        self.model = AutoModelForCausalLM.from_pretrained(
-            pretrained,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        ).eval()
+    def _convert_image_to_data_url(self, image_path):
+        """Convert image path to data URL format for vLLM."""
+        if image_path.startswith("http"):
+            return {"url": image_path}
         
-        # Initialize processor for handling both text and images
-        self.processor = AutoProcessor.from_pretrained(pretrained)
+        # For local files, convert to base64
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
         
-        # Also initialize tokenizer for text-only scenarios
-        self.tokenizer = AutoTokenizer.from_pretrained(pretrained)
+        encoded = base64.b64encode(image_bytes).decode("utf-8")
+        mime_type = "image/jpeg"  # Default to JPEG, could be made smarter
+        if image_path.lower().endswith(".png"):
+            mime_type = "image/png"
         
-        if accelerator.num_processes > 1:
-            assert accelerator.distributed_type in [
-                DistributedType.FSDP,
-                DistributedType.MULTI_GPU,
-            ], "Unsupported distributed type provided. Only DDP and FSDP are supported."
-            if accelerator.distributed_type == DistributedType.FSDP:
-                self._model = accelerator.prepare(self.model)
-            else:
-                self._model = accelerator.prepare_model(self.model, evaluation_mode=True)
-            self.accelerator = accelerator
-            if self.accelerator.is_local_main_process:
-                eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")
-            self._rank = self.accelerator.local_process_index
-            self._world_size = self.accelerator.num_processes
-        else:
-            self.model.to(self._device)
-            self._rank = 0
-            self._world_size = 1
-            self.accelerator = accelerator
+        return {"url": f"data:{mime_type};base64,{encoded}"}
 
     def loglikelihood(self, requests: list[Instance]) -> list[tuple[float, bool]]:
-        raise NotImplementedError
+        raise NotImplementedError("Loglikelihood calculation not implemented for Pixtral with vLLM")
 
     def generate_until(self, requests: list[Instance]) -> list[str]:
         res = []
+        sampling_params = SamplingParams(max_tokens=self.max_tokens, temperature=0)
+        
         for contexts, gen_kwargs, doc_to_visual, doc_id, task, split in tqdm([reg.args for reg in requests]):
+            # Initialize chat message structure
+            chat = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": contexts}
+                    ]
+                }
+            ]
+            
             # Process image data if available
             if doc_to_visual and hasattr(self, 'task_dict') and task in self.task_dict and split in self.task_dict[task] and doc_id in self.task_dict[task][split]:
                 visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
                 
-                # Process text and image inputs using the processor
-                # For Pixtral, we need to process images and text together
-                model_inputs = self.processor(
-                    text=contexts, 
-                    images=visuals[0][0], 
-                    return_tensors="pt"
-                )
-                
-                # Move inputs to the device
-                for key in model_inputs:
-                    model_inputs[key] = model_inputs[key].to(self.model.device)
-                
-                input_len = model_inputs["input_ids"].shape[-1]
-                
-                # Generate text
-                with torch.inference_mode():
-                    generation = self.model.generate(
-                        **model_inputs, 
-                        max_new_tokens=gen_kwargs.get("max_new_tokens", 100), 
-                        do_sample=gen_kwargs.get("do_sample", False),
-                        temperature=gen_kwargs.get("temperature", 0)
-                    )
-                    generation = generation[0][input_len:]
-                    decoded = self.processor.decode(generation, skip_special_tokens=True)
-            else:
-                # Text-only generation
-                model_inputs = self.tokenizer(contexts, return_tensors="pt").to(self.model.device)
-                input_len = model_inputs["input_ids"].shape[-1]
-                
-                # Generate text
-                with torch.inference_mode():
-                    generation = self.model.generate(
-                        **model_inputs, 
-                        max_new_tokens=gen_kwargs.get("max_new_tokens", 100), 
-                        do_sample=gen_kwargs.get("do_sample", False),
-                        temperature=gen_kwargs.get("temperature", 0)
-                    )
-                    generation = generation[0][input_len:]
-                    decoded = self.tokenizer.decode(generation, skip_special_tokens=True)
+                # Add images to the chat message
+                for visual in visuals[0]:
+                    if isinstance(visual, str):  # Assuming it's a file path
+                        image_data = self._convert_image_to_data_url(visual)
+                        chat[0]["content"].append({
+                            "type": "image_url",
+                            "image_url": image_data
+                        })
+                    elif isinstance(visual, Image.Image):
+                        # Convert PIL image to bytes
+                        buffered = BytesIO()
+                        visual.save(buffered, format="JPEG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                        chat[0]["content"].append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_str}"}
+                        })
             
-            res.append(decoded)
+            # Update sampling parameters from gen_kwargs
+            if gen_kwargs:
+                custom_params = {}
+                if "max_new_tokens" in gen_kwargs:
+                    custom_params["max_tokens"] = gen_kwargs["max_new_tokens"]
+                if "do_sample" in gen_kwargs and gen_kwargs["do_sample"]:
+                    custom_params["use_beam_search"] = False
+                if "temperature" in gen_kwargs:
+                    custom_params["temperature"] = gen_kwargs["temperature"]
+                
+                sampling_params = SamplingParams(**custom_params)
+            
+            # Generate response using vLLM
+            outputs = self.llm.chat(messages=chat, sampling_params=sampling_params)
+            output_text = outputs[0].outputs[0].text
+            
+            res.append(output_text)
+        
         return res
     
     def generate_until_multi_round(self, requests: list[Instance]) -> list[str]:
-        raise NotImplementedError 
+        raise NotImplementedError("Multi-round generation not implemented for Pixtral with vLLM") 
