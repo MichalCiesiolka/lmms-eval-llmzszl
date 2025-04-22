@@ -1,9 +1,6 @@
 from PIL import Image
 import os
-from paddleocr import PaddleOCR
-import pytesseract
-
-ocr = PaddleOCR(use_angle_cls=True, lang="pl")
+import easyocr
 
 
 def llmzszl_doc_to_visual(doc, max_size=(512, 512)):
@@ -28,20 +25,12 @@ def llmzszl_doc_to_visual(doc, max_size=(512, 512)):
         print(f"Error loading image {image_path}: {e}")
         return None
 
-def extract_text_from_image(image_path):
-    result = ocr.ocr(image_path, det=True, cls=True, rec=True)
-    text_lines = []
-    
-    for line in result:
-        for word_info in line:
-            text = word_info[1][0]
-            text_lines.append(text)
-    
-    return " ".join(text_lines)
-
 
 def extract_polish_text(image_path):
-    return pytesseract.image_to_string(Image.open(image_path), lang='pol')
+    reader = easyocr.Reader(['pl'])
+    result = reader.readtext(image_path)
+    plain_text = ' '.join([text for _, text, _ in result])
+    return plain_text
 
 def doc_to_text(doc):
     base_path = "../mmllmzszl-test/"  # Adjust this path according to your setup
