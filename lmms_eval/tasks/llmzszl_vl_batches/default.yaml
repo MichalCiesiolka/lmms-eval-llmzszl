@@ -1,14 +1,14 @@
-task: llmzszl_vl_OCR_NO_RESIZE
+task: llmzszl_vl_batches
 dataset_path: json
 dataset_name: null
 test_split: test
 dataset_kwargs:
   data_files:
-    test: "../mmllmzszl-test/metadata.json"
+    test: "../mmllmzszl-test/metadata_part1.json"
 output_type: generate_until
 doc_to_visual: !function utils.llmzszl_doc_to_visual
 process_results: !function utils.llmzszl_process_results
-doc_to_text: !function utils.doc_to_text
+doc_to_text: "Answer the Polish exam question from the image. Answer with the good answer letter only. Possible answers are A or B or C or D."
 doc_to_target: correct_answer
 generation_kwargs:
   temperature: 0

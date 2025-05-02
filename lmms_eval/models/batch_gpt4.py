@@ -5,7 +5,7 @@ import os
 import time
 from copy import deepcopy
 from io import BytesIO
-
+from typing import List
 import numpy as np
 import requests as url_requests
 
@@ -166,7 +166,7 @@ class BatchGPT4(lmms):
                 res = ["Batch failed"] * len(requests)
                 return res
             else:
-                eval_logger.info(f"Batch status: {batch_status.status}. Retrying in {NUM_SECONDS_TO_SLEEP} seconds.")
+                eval_logger.info(f"ID: {batch_response.id} Batch status: {batch_status.status}. Retrying in {NUM_SECONDS_TO_SLEEP} seconds.")
                 time.sleep(NUM_SECONDS_TO_SLEEP)
 
     def loglikelihood(self, requests):
@@ -174,6 +174,9 @@ class BatchGPT4(lmms):
         assert False, "GPT4V not support"
 
     def create_batch_input_file(self, requests_data, file_path="batchinput.jsonl"):
+        file_path = os.path.expanduser(file_path)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
         with open(file_path, "w") as file:
             for request_id, data in requests_data.items():
                 json_record = json.dumps({"custom_id": request_id, "method": "POST", "url": "/v1/chat/completions", "body": data})

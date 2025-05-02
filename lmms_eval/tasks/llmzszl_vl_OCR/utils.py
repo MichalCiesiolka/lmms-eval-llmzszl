@@ -40,7 +40,7 @@ def doc_to_text(doc):
     image_path = os.path.join(base_path, doc["file_name"])
     ocr_text = extract_polish_text(image_path)
     PROMPT = PROMPT_BASE + " " + CONTEXT_PROMPT + ocr_text
-    print(PROMPT)
+    #print(PROMPT)
     return PROMPT
 
 def parse_pred_ans(pred_ans):

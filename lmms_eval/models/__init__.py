@@ -72,6 +72,7 @@ AVAILABLE_MODELS = {
     "whisper_vllm": "WhisperVllm",
     "vora": "VoRA",
     "gemma3": "Gemma3",
+    "pixtral": "Pixtral",
 }
 
 

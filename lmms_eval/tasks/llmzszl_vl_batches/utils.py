@@ -17,7 +17,7 @@ def llmzszl_doc_to_visual(doc, max_size=(512, 512)):
     try:
         img = Image.open(image_path).convert("RGB")
         # Resize the image to reduce memory usage
-        # img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
         return [img]  # Models expect a list of images
     except Exception as e:
         print(f"Error loading image {image_path}: {e}")

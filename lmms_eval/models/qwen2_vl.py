@@ -71,7 +71,7 @@ class Qwen2_VL(lmms):
         self.max_pixels = max_pixels
         self.min_pixels = min_pixels
         self.max_num_frames = max_num_frames
-        self._tokenizer = AutoTokenizer.from_pretrained(pretrained)
+        self._tokenizer = AutoTokenizer.from_pretrained(pretrained, use_fast=True)
 
         self._config = self.model.config
         self.batch_size_per_gpu = int(batch_size)
