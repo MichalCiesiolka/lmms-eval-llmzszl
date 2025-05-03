@@ -21,7 +21,7 @@ from tqdm import tqdm
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
-
+import tiktoken
 # Conditional imports
 try:
     from decord import VideoReader, cpu
@@ -75,7 +75,11 @@ class BatchGPT4(lmms):
 
         self.api_key = api_key
         self.api_url = api_url
-        self.client = OpenAI(api_key=api_key)
+        # self.client = OpenAI(api_key=api_key)
+
+        self.tokenizer = tiktoken.get_encoding("cl100k_base")
+
+
 
         accelerator = Accelerator()
         assert accelerator.state.local_process_index == 0, "BatchGPT4 does not support distributed inference."
@@ -84,7 +88,10 @@ class BatchGPT4(lmms):
     # Function to encode the image
     def encode_image(self, image: Image):
         output_buffer = BytesIO()
-        image.save(output_buffer, format="PNG")
+        # image.save(output_buffer, format="PNG")
+
+        image.save(output_buffer, format="JPEG", quality=85, optimize=True)
+
         byte_data = output_buffer.getvalue()
         base64_str = base64.b64encode(byte_data).decode("utf-8")
         return base64_str
@@ -114,11 +121,23 @@ class BatchGPT4(lmms):
             for j in i:
                 new_list.append(j)
         return new_list
+    
+    def count_tokens(self, messages, tokenizer):
+        total_tokens = 0
+        for message in messages:
+            role = message.get("role", "")
+            content = message.get("content", "")
+            tokens = tokenizer.encode(role) + tokenizer.encode(content)
+            total_tokens += len(tokens) + 4  # +4 for OpenAI chat format overhead
+        return total_tokens + 2  # Every chat ends with <|start|>assistant<|message|>
+
 
     def generate_until(self, requests):
         # Prepare the batch requests data
         requests_data = {}
         pbar = tqdm(total=len(requests), disable=(self.rank != 0), desc="Batch Preparing")
+        total_batch_tokens = 0
+        processed_images = 0
         for idx, (contexts, gen_kwargs, doc_to_visual, doc_id, task, split) in enumerate([reg.args for reg in requests]):
             visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
             visuals = self.flatten(visuals)
@@ -145,29 +164,37 @@ class BatchGPT4(lmms):
                 if len(contexts_split) > len(imgs):
                     messages.append({"role": "user", "content": contexts_split[-1]})
 
-            requests_data[f"request-{idx}"] = {"model": self.model_version, "messages": messages, "max_tokens": gen_kwargs.get("max_new_tokens", 1024)}
+            # Use file path style identifier instead of simple index
+            request_id = self.task_dict[task][split][doc_id]["file_name"]
+            requests_data[request_id] = {"model": self.model_version, "messages": messages, "max_tokens": gen_kwargs.get("max_new_tokens", 1024)}
+            batch_tokens = self.count_tokens(messages, self.tokenizer)
+            print(f"[Request {request_id}] Token count: {batch_tokens}")
+            total_batch_tokens += batch_tokens
+            processed_images += 1
             pbar.update(1)
 
-        file_path = os.getenv("HF_HOME", "~/.cache/huggingface") + f"/batchinput_{len(requests_data)}.jsonl"
-        file_path = self.create_batch_input_file(requests_data, file_path)
-        file_id = self.upload_input_file(file_path)
+        # file_path = os.getenv("HF_HOME", "~/.cache/huggingface") + f"/batchinput_{len(requests_data)}.jsonl"
+        # file_path = self.create_batch_input_file(requests_data, file_path)
+        # file_id = self.upload_input_file(file_path)
 
-        batch_response = self.create_batch(file_id, metadata={"description": "Batch Processing for GPT-4"})
-        batch_status = self.check_batch_status(batch_response.id)
-        while True:
-            batch_status = self.check_batch_status(batch_response.id)
-            if batch_status.status == "completed":
-                eval_logger.info("Batch processing completed.")
-                batch_results = self.retrieve_batch_results(batch_status.output_file_id)
-                res = [result["response"]["choices"][0]["message"]["content"] for result in json.loads(batch_results)]
-                return res
-            elif batch_status.status == "failed":
-                eval_logger.info("Batch processing failed.")
-                res = ["Batch failed"] * len(requests)
-                return res
-            else:
-                eval_logger.info(f"ID: {batch_response.id} Batch status: {batch_status.status}. Retrying in {NUM_SECONDS_TO_SLEEP} seconds.")
-                time.sleep(NUM_SECONDS_TO_SLEEP)
+        print(f"Total batch tokens: {total_batch_tokens}")
+        print(f"Average tokens per image: {total_batch_tokens / processed_images}")
+        # batch_response = self.create_batch(file_id, metadata={"description": "Batch Processing for GPT-4"})
+        # batch_status = self.check_batch_status(batch_response.id)
+        # while True:
+        #     batch_status = self.check_batch_status(batch_response.id)
+        #     if batch_status.status == "completed":
+        #         eval_logger.info("Batch processing completed.")
+        #         batch_results = self.retrieve_batch_results(batch_status.output_file_id)
+        #         res = [result["response"]["choices"][0]["message"]["content"] for result in json.loads(batch_results)]
+        #         return res
+        #     elif batch_status.status == "failed":
+        #         eval_logger.info("Batch processing failed.")
+        #         res = ["Batch failed"] * len(requests)
+        #         return res
+        #     else:
+        #         eval_logger.info(f"ID: {batch_response.id} Batch status: {batch_status.status}. Retrying in {NUM_SECONDS_TO_SLEEP} seconds.")
+        #         time.sleep(NUM_SECONDS_TO_SLEEP)
 
     def loglikelihood(self, requests):
         # TODO
